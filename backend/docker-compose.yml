@@ -1,0 +1,59 @@
+# docker-compose.yml
+# version: '3.8'
+
+services:
+  # PostgreSQL Database Service
+  db:
+    image: postgres:15
+    volumes:
+      - postgres_data:/var/lib/postgresql/data/
+    environment:
+      - POSTGRES_DB=edumind_db
+      - POSTGRES_USER=edumind_user
+      - POSTGRES_PASSWORD=jkateracqweqjhfmgl # Use a real secret in production
+    ports:
+      - "5433:5432"
+
+  # Redis Service (for Celery)
+  redis:
+    image: redis:7
+
+  # Django Application Service
+  app:
+    build: .
+    command: gunicorn edumind_saas.asgi:application --bind 0.0.0.0:8000 -w 4 -k uvicorn.workers.UvicornWorker
+    volumes:
+      - .:/app
+    ports:
+      - "8000:8000"
+    environment:
+      # Pass environment variables from your .env file
+      - DJANGO_SETTINGS_MODULE=edumind_saas.settings
+      - POSTGRES_DB=edumind_db
+      - POSTGRES_USER=edumind_user
+      - POSTGRES_PASSWORD=jkateracqweqjhfmgl
+      - REDIS_HOST=redis
+      # Add all other env vars here (AWS keys, OpenAI key, etc.)
+    depends_on:
+      - db
+      - redis
+
+  # Celery Worker Service
+  celery_worker:
+    build: .
+    # Note the use of --pool=eventlet for Windows compatibility,
+    # but in Docker (Linux), you can often revert to the default 'prefork'.
+    command: celery -A edumind_saas worker -l info --pool=eventlet
+    volumes:
+      - .:/app
+    environment:
+      # Pass the same environment variables
+      - DJANGO_SETTINGS_MODULE=edumind_saas.settings
+      - POSTGRES_DB=edumind_db
+      # ... and so on
+    depends_on:
+      - db
+      - redis
+
+volumes:
+  postgres_data:
